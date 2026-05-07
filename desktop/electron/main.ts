@@ -1339,8 +1339,11 @@ const RUNTIME_BUNDLE_DIR = runtimeBundleDirName(CURRENT_RUNTIME_PLATFORM);
 const DEV_RUNTIME_ROOT =
   process.env.HOLABOSS_DEV_RUNTIME_ROOT?.trim() ||
   path.join(os.tmpdir(), `holaboss-runtime-${CURRENT_RUNTIME_PLATFORM}-full`);
+const configuredDesktopUserDataDir =
+  process.env.HOLABOSS_DESKTOP_USER_DATA_DIR?.trim() || "";
 const DESKTOP_USER_DATA_DIR = (
-  process.env.HOLABOSS_DESKTOP_USER_DATA_DIR?.trim() || "holaboss-local"
+  configuredDesktopUserDataDir ||
+  (isDev ? "holaboss-local-dev" : "holaboss-local")
 ).replace(/[\\/]+/g, "_");
 const normalizeBaseUrl = (value: string): string =>
   value.trim().replace(/\/+$/, "");
