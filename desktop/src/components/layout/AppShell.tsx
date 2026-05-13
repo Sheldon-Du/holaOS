@@ -124,7 +124,6 @@ const SPACE_EXPLORER_RAIL_WIDTH = 52;
 const UTILITY_PANE_RESIZER_WIDTH = 16;
 const APP_UPDATE_CHANGELOG_BASE_URL =
   "https://github.com/holaboss-ai/holaOS-releases/releases/tag";
-const DEFAULT_PROACTIVE_HEARTBEAT_CRON = "0 9 * * *";
 const MAX_SEEN_TASK_PROPOSAL_IDS_PER_WORKSPACE = 200;
 
 function currentComposerSelectedModel(
@@ -1601,47 +1600,14 @@ function AppShellContent() {
   const [seenTaskProposalIdsByWorkspace, setSeenTaskProposalIdsByWorkspace] =
     useState<Record<string, string[]>>(loadSeenTaskProposalIdsByWorkspace);
   const [isLoadingTaskProposals, setIsLoadingTaskProposals] = useState(false);
-  const [isTriggeringTaskProposal, setIsTriggeringTaskProposal] =
-    useState(false);
   const [taskProposalStatusMessage, setTaskProposalStatusMessage] =
     useState("");
   const [taskProposalDetailsDialogOpen, setTaskProposalDetailsDialogOpen] =
     useState(false);
-  const [proactiveTaskProposalsEnabled, setProactiveTaskProposalsEnabled] =
-    useState(false);
-  const [
-    isLoadingProactiveTaskProposalsEnabled,
-    setIsLoadingProactiveTaskProposalsEnabled,
-  ] = useState(true);
-  const [
-    hasLoadedProactiveTaskProposalsPreference,
-    setHasLoadedProactiveTaskProposalsPreference,
-  ] = useState(false);
   // Keep request keys monotonic even after the request object is consumed.
   const chatSessionOpenRequestKeyRef = useRef(0);
   const chatComposerPrefillRequestKeyRef = useRef(0);
   const chatExplorerAttachmentRequestKeyRef = useRef(0);
-  const [
-    isUpdatingProactiveTaskProposalsEnabled,
-    setIsUpdatingProactiveTaskProposalsEnabled,
-  ] = useState(false);
-  const [proactiveTaskProposalsError, setProactiveTaskProposalsError] =
-    useState("");
-  const [proactiveHeartbeatConfig, setProactiveHeartbeatConfig] =
-    useState<ProactiveHeartbeatConfigPayload | null>(null);
-  const [
-    isLoadingProactiveHeartbeatConfig,
-    setIsLoadingProactiveHeartbeatConfig,
-  ] = useState(false);
-  const [
-    isUpdatingProactiveHeartbeatConfig,
-    setIsUpdatingProactiveHeartbeatConfig,
-  ] = useState(false);
-  const [proactiveHeartbeatError, setProactiveHeartbeatError] = useState("");
-  const [proactiveStatus, setProactiveStatus] =
-    useState<ProactiveAgentStatusPayload | null>(null);
-  const [isLoadingProactiveStatus, setIsLoadingProactiveStatus] =
-    useState(false);
   const [proposalAction, setProposalAction] = useState<{
     proposalId: string;
     action: "accept" | "dismiss";
@@ -1718,42 +1684,6 @@ function AppShellContent() {
   browserPaneWidthRef.current = browserPaneWidth;
   spaceVisibilityRef.current = spaceVisibility;
   const effectiveSpaceWorkspacePanelCollapsed = spaceWorkspacePanelCollapsed;
-
-  const proactiveHeartbeatWorkspaceSyncKey = useMemo(
-    () =>
-      [...workspaces]
-        .map((workspace) => `${workspace.id}:${workspace.name || ""}`)
-        .sort()
-        .join("|"),
-    [workspaces],
-  );
-  const currentProactiveHeartbeatWorkspace = useMemo(
-    () =>
-      proactiveHeartbeatConfig?.workspaces.find(
-        (workspace) => workspace.workspace_id === selectedWorkspaceId,
-      ) ?? null,
-    [proactiveHeartbeatConfig, selectedWorkspaceId],
-  );
-  const proactiveWorkspaceEnabled = useMemo(
-    () =>
-      Boolean(
-        selectedWorkspaceId &&
-        proactiveTaskProposalsEnabled &&
-        (proactiveHeartbeatConfig?.enabled ?? false) &&
-        (currentProactiveHeartbeatWorkspace?.enabled ?? true),
-      ),
-    [
-      currentProactiveHeartbeatWorkspace,
-      proactiveHeartbeatConfig,
-      proactiveTaskProposalsEnabled,
-      selectedWorkspaceId,
-    ],
-  );
-  const isLoadingProactiveWorkspaceEnabled =
-    isLoadingProactiveTaskProposalsEnabled || isLoadingProactiveHeartbeatConfig;
-  const isUpdatingProactiveWorkspaceEnabled =
-    isUpdatingProactiveTaskProposalsEnabled ||
-    isUpdatingProactiveHeartbeatConfig;
 
   const effectiveAppUpdateStatus = useMemo(
     () =>
@@ -3025,169 +2955,6 @@ function AppShellContent() {
     setChatScheduleEditContext(null);
   }, [selectedWorkspaceId]);
 
-  useEffect(() => {
-    if (!hasHydratedWorkspaceList) {
-      return;
-    }
-    let cancelled = false;
-    const loadPreference = async () => {
-      setIsLoadingProactiveTaskProposalsEnabled(true);
-      try {
-        const preference =
-          await window.electronAPI.workspace.getProactiveTaskProposalPreference();
-        if (!cancelled) {
-          setProactiveTaskProposalsEnabled(preference.enabled === true);
-          setProactiveTaskProposalsError("");
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setProactiveTaskProposalsEnabled(false);
-          setProactiveTaskProposalsError(normalizeErrorMessage(error));
-        }
-      } finally {
-        if (!cancelled) {
-          setHasLoadedProactiveTaskProposalsPreference(true);
-          setIsLoadingProactiveTaskProposalsEnabled(false);
-        }
-      }
-    };
-
-    void loadPreference();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedWorkspaceId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadHeartbeatConfig = async () => {
-      setIsLoadingProactiveHeartbeatConfig(true);
-      try {
-        const config =
-          await window.electronAPI.workspace.getProactiveHeartbeatConfig();
-        if (!cancelled) {
-          setProactiveHeartbeatConfig(config);
-          setProactiveHeartbeatError("");
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setProactiveHeartbeatConfig(null);
-          setProactiveHeartbeatError(normalizeErrorMessage(error));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingProactiveHeartbeatConfig(false);
-        }
-      }
-    };
-
-    void loadHeartbeatConfig();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    hasHydratedWorkspaceList,
-    proactiveHeartbeatWorkspaceSyncKey,
-    runtimeConfig?.sandboxId,
-    runtimeConfig?.userId,
-  ]);
-
-  async function handleProactiveWorkspaceEnabledChange(enabled: boolean) {
-    if (!selectedWorkspaceId) {
-      return;
-    }
-
-    setProactiveTaskProposalsError("");
-    setProactiveHeartbeatError("");
-    setIsUpdatingProactiveTaskProposalsEnabled(true);
-    setIsUpdatingProactiveHeartbeatConfig(true);
-    let errorTarget: "task-proposals" | "heartbeat" = "heartbeat";
-
-    try {
-      if (enabled) {
-        errorTarget = "task-proposals";
-        const preference =
-          await window.electronAPI.workspace.setProactiveTaskProposalPreference(
-            {
-              enabled: true,
-            },
-          );
-        const nextTaskProposalPreferenceEnabled = preference.enabled === true;
-        setProactiveTaskProposalsEnabled(nextTaskProposalPreferenceEnabled);
-
-        errorTarget = "heartbeat";
-        let nextHeartbeatConfig =
-          await window.electronAPI.workspace.setProactiveHeartbeatConfig({
-            cron:
-              proactiveHeartbeatConfig?.cron?.trim() ||
-              DEFAULT_PROACTIVE_HEARTBEAT_CRON,
-            enabled: true,
-          });
-        setProactiveHeartbeatConfig(nextHeartbeatConfig);
-
-        nextHeartbeatConfig =
-          await window.electronAPI.workspace.setProactiveHeartbeatWorkspaceEnabled(
-            {
-              workspace_id: selectedWorkspaceId,
-              workspace_name: selectedWorkspace?.name || null,
-              enabled: true,
-            },
-          );
-        setProactiveHeartbeatConfig(nextHeartbeatConfig);
-
-        if (!nextTaskProposalPreferenceEnabled) {
-          setProactiveTaskProposalsError(
-            "Task proposals could not be enabled for this workspace.",
-          );
-        }
-        return;
-      }
-
-      const config =
-        await window.electronAPI.workspace.setProactiveHeartbeatWorkspaceEnabled(
-          {
-            workspace_id: selectedWorkspaceId,
-            workspace_name: selectedWorkspace?.name || null,
-            enabled: false,
-          },
-        );
-      setProactiveHeartbeatConfig(config);
-    } catch (error) {
-      const message = normalizeErrorMessage(error);
-      if (errorTarget === "task-proposals") {
-        setProactiveTaskProposalsError(message);
-      } else {
-        setProactiveHeartbeatError(message);
-      }
-    } finally {
-      setIsUpdatingProactiveTaskProposalsEnabled(false);
-      setIsUpdatingProactiveHeartbeatConfig(false);
-    }
-  }
-
-  async function handleProactiveHeartbeatCronChange(cron: string) {
-    const normalizedCron = cron.trim();
-    if (!normalizedCron) {
-      return;
-    }
-
-    setProactiveHeartbeatError("");
-    setIsUpdatingProactiveHeartbeatConfig(true);
-    try {
-      const config =
-        await window.electronAPI.workspace.setProactiveHeartbeatConfig({
-          cron: normalizedCron,
-          enabled: proactiveHeartbeatConfig?.enabled ?? false,
-        });
-      setProactiveHeartbeatConfig(config);
-    } catch (error) {
-      setProactiveHeartbeatError(normalizeErrorMessage(error));
-    } finally {
-      setIsUpdatingProactiveHeartbeatConfig(false);
-    }
-  }
-
   async function refreshTaskProposals() {
     if (!selectedWorkspaceId || !selectedWorkspace) {
       applyTaskProposals(selectedWorkspaceId, selectedWorkspace?.name, [], {
@@ -3212,58 +2979,6 @@ function AppShellContent() {
       setTaskProposalStatusMessage(normalizeErrorMessage(error));
     } finally {
       setIsLoadingTaskProposals(false);
-    }
-  }
-
-  async function refreshProactiveStatus(options?: { silent?: boolean }) {
-    if (!selectedWorkspaceId || !selectedWorkspace) {
-      setProactiveStatus(null);
-      setIsLoadingProactiveStatus(false);
-      return;
-    }
-
-    if (!options?.silent) {
-      setIsLoadingProactiveStatus(true);
-    }
-    try {
-      const response = await window.electronAPI.workspace.getProactiveStatus(
-        selectedWorkspace.id,
-      );
-      setProactiveStatus(response);
-    } catch (error) {
-      if (!options?.silent) {
-        setTaskProposalStatusMessage(normalizeErrorMessage(error));
-      }
-    } finally {
-      if (!options?.silent) {
-        setIsLoadingProactiveStatus(false);
-      }
-    }
-  }
-
-  async function triggerRemoteTaskProposal() {
-    if (!selectedWorkspaceId) {
-      return;
-    }
-    setIsTriggeringTaskProposal(true);
-    setTaskProposalStatusMessage("");
-    try {
-      const response =
-        await window.electronAPI.workspace.requestRemoteTaskProposalGeneration({
-          workspace_id: selectedWorkspaceId,
-        });
-      setTaskProposalStatusMessage(
-        response.accepted ? "" : "Suggestions are unavailable right now.",
-      );
-      void refreshProactiveStatus();
-      window.setTimeout(() => {
-        void refreshTaskProposals();
-        void refreshProactiveStatus({ silent: true });
-      }, 1500);
-    } catch (error) {
-      setTaskProposalStatusMessage(normalizeErrorMessage(error));
-    } finally {
-      setIsTriggeringTaskProposal(false);
     }
   }
 
@@ -3396,75 +3111,6 @@ function AppShellContent() {
     operationsDrawerOpen,
     selectedWorkspaceId,
     taskProposals,
-  ]);
-
-  useEffect(() => {
-    if (!selectedWorkspaceId || !selectedWorkspace) {
-      setProactiveStatus(null);
-      setIsLoadingProactiveStatus(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const load = async (options?: { silent?: boolean }) => {
-      if (!options?.silent && !cancelled) {
-        setIsLoadingProactiveStatus(true);
-      }
-      try {
-        const response = await window.electronAPI.workspace.getProactiveStatus(
-          selectedWorkspace.id,
-        );
-        if (!cancelled) {
-          setProactiveStatus(response);
-        }
-      } catch (error) {
-        if (!cancelled && !options?.silent) {
-          setTaskProposalStatusMessage(normalizeErrorMessage(error));
-        }
-      } finally {
-        if (!cancelled && !options?.silent) {
-          setIsLoadingProactiveStatus(false);
-        }
-      }
-    };
-
-    void load();
-    const timer = window.setInterval(() => {
-      void load({ silent: true });
-    }, 5000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [selectedWorkspace, selectedWorkspaceId]);
-
-  useEffect(() => {
-    if (!selectedWorkspaceId || !selectedWorkspace) {
-      return;
-    }
-
-    let cancelled = false;
-    void window.electronAPI.workspace
-      .getProactiveStatus(selectedWorkspace.id)
-      .then((response) => {
-        if (!cancelled) {
-          setProactiveStatus(response);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    runtimeConfig?.authTokenPresent,
-    runtimeConfig?.modelProxyBaseUrl,
-    runtimeConfig?.userId,
-    runtimeStatus?.status,
-    selectedWorkspace,
-    selectedWorkspaceId,
   ]);
 
   const handleDismissUpdate = useCallback(() => {
@@ -4269,14 +3915,6 @@ function AppShellContent() {
         toast_count: effectiveToastNotifications.length,
         task_proposal_count: taskProposals.length,
       },
-      proactive: {
-        workspace_enabled: proactiveWorkspaceEnabled,
-        loading_workspace_enabled: isLoadingProactiveWorkspaceEnabled,
-        updating_workspace_enabled: isUpdatingProactiveWorkspaceEnabled,
-        loading_status: isLoadingProactiveStatus,
-        has_status: Boolean(proactiveStatus),
-        error: proactiveTaskProposalsError || proactiveHeartbeatError || null,
-      },
       app_update: summarizeAppUpdateStatusForSentry(effectiveAppUpdateStatus),
       operator_surface: reportedOperatorSurfaceContext
         ? {
@@ -4295,16 +3933,9 @@ function AppShellContent() {
       effectiveAppUpdateStatus,
       effectiveToastNotifications.length,
       hasHydratedWorkspaceList,
-      isLoadingProactiveStatus,
-      isLoadingProactiveWorkspaceEnabled,
-      isUpdatingProactiveWorkspaceEnabled,
       notifications.length,
       onboardingModeActive,
       operationsDrawerOpen,
-      proactiveHeartbeatError,
-      proactiveStatus,
-      proactiveTaskProposalsError,
-      proactiveWorkspaceEnabled,
       publishOpen,
       reportedOperatorSurfaceContext,
       runtimeStatus,
@@ -4924,44 +4555,13 @@ function AppShellContent() {
           >
             <OperationsInboxPane
               proposals={taskProposals}
-              proactiveStatus={proactiveStatus}
-              isLoadingProactiveStatus={isLoadingProactiveStatus}
-              proactiveWorkspaceEnabled={proactiveWorkspaceEnabled}
-              isLoadingProactiveWorkspaceEnabled={
-                isLoadingProactiveWorkspaceEnabled
-              }
-              isUpdatingProactiveWorkspaceEnabled={
-                isUpdatingProactiveWorkspaceEnabled
-              }
-              proactiveHeartbeatCron={
-                proactiveHeartbeatConfig?.cron?.trim() ||
-                DEFAULT_PROACTIVE_HEARTBEAT_CRON
-              }
-              isLoadingProactiveHeartbeatConfig={
-                isLoadingProactiveHeartbeatConfig
-              }
-              isUpdatingProactiveHeartbeatConfig={
-                isUpdatingProactiveHeartbeatConfig
-              }
-              proactiveTaskProposalsError={proactiveTaskProposalsError}
-              proactiveHeartbeatError={proactiveHeartbeatError}
               isLoadingProposals={isLoadingTaskProposals}
-              isTriggeringProposal={isTriggeringTaskProposal}
               proposalStatusMessage={taskProposalStatusMessage}
               proposalAction={proposalAction}
-              onTriggerProposal={triggerRemoteTaskProposal}
-              onProactiveWorkspaceEnabledChange={
-                handleProactiveWorkspaceEnabledChange
-              }
-              onProactiveHeartbeatCronChange={
-                handleProactiveHeartbeatCronChange
-              }
               onAcceptProposal={acceptTaskProposal}
               onDismissProposal={dismissTaskProposal}
               onProposalDetailsOpenChange={setTaskProposalDetailsDialogOpen}
               hasWorkspace={hasSelectedWorkspace}
-              selectedWorkspaceId={selectedWorkspaceId}
-              selectedWorkspaceName={selectedWorkspace?.name ?? null}
             />
           </div>
         </section>
@@ -5157,24 +4757,13 @@ function AppShellContent() {
     handleReturnToChatPane,
     handleCreateSession,
     handleOpenLinkInNewAppBrowserTab,
-    handleProactiveHeartbeatCronChange,
-    handleProactiveWorkspaceEnabledChange,
     handleOpenLinkInAppBrowser,
     handleOpenLocalLinkInFiles,
     handleSyncAgentOperationFileDisplay,
     handleOpenWorkspaceOutput,
     hasSelectedWorkspace,
-    isLoadingProactiveHeartbeatConfig,
-    isLoadingProactiveStatus,
-    isLoadingProactiveWorkspaceEnabled,
     isLoadingTaskProposals,
-    isTriggeringTaskProposal,
     proposalAction,
-    proactiveHeartbeatConfig?.cron,
-    proactiveHeartbeatError,
-    proactiveStatus,
-    proactiveTaskProposalsError,
-    proactiveWorkspaceEnabled,
     selectedWorkspace?.name,
     selectedWorkspace?.folder_state,
     selectedWorkspace?.workspace_path,
@@ -5185,10 +4774,7 @@ function AppShellContent() {
     unreadTaskProposalCount,
     acceptTaskProposal,
     dismissTaskProposal,
-    isUpdatingProactiveHeartbeatConfig,
-    isUpdatingProactiveWorkspaceEnabled,
     onboardingModeActive,
-    triggerRemoteTaskProposal,
     chooseWorkspaceRelocationFolder,
     deleteWorkspace,
     isSpacePaneAnimating,
